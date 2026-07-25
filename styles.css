@@ -1,0 +1,394 @@
+/* ============================================================
+   TOKENS — "stamped ledger" system
+   Ink navy-green surfaces, brass accent, paper-toned text,
+   monospaced tabular numbers for every dollar figure.
+   ============================================================ */
+:root {
+  --ink:        #0F1D18;   /* app background */
+  --surface:    #16261F;   /* card surface */
+  --surface-2:  #1D2F27;   /* raised surface (modals) */
+  --hairline:   #2A3D34;
+  --paper:      #EDE7D8;   /* primary text */
+  --paper-60:   rgba(237, 231, 216, 0.6);
+  --paper-35:   rgba(237, 231, 216, 0.35);
+  --brass:      #B8935B;
+  --brass-dim:  rgba(184, 147, 91, 0.16);
+  --sage:       #6B8F71;   /* paid / success */
+  --sage-dim:   rgba(107, 143, 113, 0.16);
+  --stamp-red:  #A2493D;   /* overdue / alert */
+  --stamp-red-dim: rgba(162, 73, 61, 0.16);
+  --amber:      #C08A3E;   /* option exercised */
+  --amber-dim:  rgba(192, 138, 62, 0.16);
+  --blue-slate: #6E8AA3;   /* offer accepted */
+  --blue-slate-dim: rgba(110, 138, 163, 0.16);
+
+  --font-display: 'Fraunces', serif;
+  --font-body: 'Inter', -apple-system, sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+
+  --radius: 10px;
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  background: var(--ink);
+  color: var(--paper);
+  font-family: var(--font-body);
+  -webkit-tap-highlight-color: transparent;
+}
+
+#app {
+  max-width: 480px;
+  margin: 0 auto;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  padding-bottom: calc(64px + var(--safe-bottom));
+}
+
+.hidden { display: none !important; }
+
+/* ============ TOP BAR ============ */
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: var(--ink);
+  border-bottom: 1px solid var(--hairline);
+  padding: 16px 18px 14px;
+}
+
+.topbar-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 14px;
+}
+
+.brand {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 22px;
+  letter-spacing: 0.01em;
+  color: var(--paper);
+}
+
+.fab-inline {
+  background: var(--brass);
+  color: var(--ink);
+  border: none;
+  border-radius: 20px;
+  padding: 8px 16px;
+  font-weight: 600;
+  font-size: 14px;
+  font-family: var(--font-body);
+}
+
+.summary {
+  display: flex;
+  gap: 10px;
+}
+
+.summary-cell {
+  flex: 1;
+  background: var(--surface);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  padding: 10px 12px;
+}
+
+.summary-cell.overdue {
+  border-color: rgba(162, 73, 61, 0.4);
+}
+
+.summary-label {
+  display: block;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--paper-60);
+  margin-bottom: 3px;
+}
+
+.summary-value {
+  display: block;
+  font-family: var(--font-mono);
+  font-weight: 600;
+  font-size: 19px;
+  font-variant-numeric: tabular-nums;
+  color: var(--paper);
+}
+
+.summary-cell.overdue .summary-value {
+  color: var(--stamp-red);
+}
+
+/* ============ SCREENS ============ */
+main#screens { flex: 1; padding: 16px; }
+.screen { display: none; }
+.screen.active { display: block; }
+
+.screen-title {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 18px;
+  margin: 4px 0 14px;
+}
+
+.empty-state {
+  text-align: center;
+  padding: 48px 20px;
+  color: var(--paper-60);
+}
+.empty-title { font-family: var(--font-display); font-size: 17px; color: var(--paper); margin: 0 0 6px; }
+.empty-body { font-size: 14px; margin: 0; line-height: 1.5; }
+
+/* ============ DEAL CARD ============ */
+.deal-list { display: flex; flex-direction: column; gap: 10px; }
+
+.deal-card {
+  background: var(--surface);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  padding: 14px;
+  cursor: pointer;
+}
+
+.deal-card-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.deal-address {
+  font-size: 14.5px;
+  font-weight: 500;
+  color: var(--paper);
+  line-height: 1.35;
+}
+
+.deal-card-bottom {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.deal-net {
+  font-family: var(--font-mono);
+  font-weight: 600;
+  font-size: 16px;
+  font-variant-numeric: tabular-nums;
+  color: var(--brass);
+}
+
+.deal-meta {
+  font-size: 12px;
+  color: var(--paper-60);
+}
+
+/* Stage pill — "rubber stamp" signature element */
+.stage-pill {
+  display: inline-block;
+  font-family: var(--font-body);
+  font-size: 10.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  padding: 4px 9px;
+  border-radius: 3px;
+  border: 1.5px solid currentColor;
+  transform: rotate(-1.5deg);
+  white-space: nowrap;
+}
+
+.stage-prospecting { color: var(--paper-60); background: rgba(237,231,216,0.06); }
+.stage-offer_accepted { color: var(--blue-slate); background: var(--blue-slate-dim); }
+.stage-option_exercised { color: var(--amber); background: var(--amber-dim); }
+.stage-completed { color: var(--sage); background: var(--sage-dim); }
+.stage-paid { color: var(--sage); background: var(--sage-dim); }
+
+.deal-card.is-overdue { border-color: rgba(162, 73, 61, 0.5); }
+.overdue-flag { color: var(--stamp-red); font-size: 11.5px; font-weight: 600; }
+
+/* ============ CALENDAR ============ */
+.calendar-list { display: flex; flex-direction: column; gap: 8px; }
+.calendar-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: var(--surface);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+}
+.calendar-date {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--brass);
+  min-width: 78px;
+}
+.calendar-address { font-size: 13.5px; flex: 1; padding: 0 10px; }
+.calendar-amount { font-family: var(--font-mono); font-weight: 600; font-variant-numeric: tabular-nums; }
+
+/* ============ REPORTS ============ */
+.reports-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px; }
+.report-row {
+  display: flex;
+  justify-content: space-between;
+  background: var(--surface);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+}
+.report-month { font-size: 14px; color: var(--paper); }
+.report-amount { font-family: var(--font-mono); font-weight: 600; color: var(--brass); font-variant-numeric: tabular-nums; }
+.report-count { font-size: 11.5px; color: var(--paper-60); }
+
+/* ============ TAB BAR ============ */
+.tabbar {
+  position: fixed;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 100%;
+  max-width: 480px;
+  display: flex;
+  background: var(--surface);
+  border-top: 1px solid var(--hairline);
+  padding-bottom: var(--safe-bottom);
+  z-index: 20;
+}
+
+.tab {
+  flex: 1;
+  background: none;
+  border: none;
+  color: var(--paper-35);
+  font-family: var(--font-body);
+  font-size: 11px;
+  padding: 10px 0 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+}
+.tab-icon { font-size: 18px; line-height: 1; }
+.tab.active { color: var(--brass); }
+
+/* ============ MODAL ============ */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.55);
+  display: flex;
+  align-items: flex-end;
+  z-index: 50;
+}
+.modal {
+  width: 100%;
+  max-width: 480px;
+  margin: 0 auto;
+  background: var(--surface-2);
+  border-radius: 16px 16px 0 0;
+  max-height: 88vh;
+  overflow-y: auto;
+  padding-bottom: var(--safe-bottom);
+}
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 18px;
+  border-bottom: 1px solid var(--hairline);
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 16px;
+  position: sticky;
+  top: 0;
+  background: var(--surface-2);
+}
+.modal-close {
+  background: none;
+  border: none;
+  color: var(--paper-60);
+  font-size: 22px;
+  line-height: 1;
+}
+.modal-body { padding: 16px 18px 24px; }
+
+/* ============ FORM ============ */
+.field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; font-size: 13px; color: var(--paper-60); }
+.field-row { display: flex; gap: 10px; }
+.field-row .field { flex: 1; }
+
+input[type="text"], input[type="number"], select {
+  background: var(--surface);
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  padding: 11px 12px;
+  color: var(--paper);
+  font-family: var(--font-body);
+  font-size: 14.5px;
+}
+input:focus, select:focus {
+  outline: 2px solid var(--brass);
+  outline-offset: 1px;
+}
+
+.checkbox-field { display: flex; align-items: center; gap: 8px; font-size: 14px; color: var(--paper); }
+.cobroke-toggle { margin-bottom: 12px; }
+.cobroke-fields { margin-bottom: 6px; }
+
+.live-preview {
+  background: var(--brass-dim);
+  border: 1px solid rgba(184, 147, 91, 0.3);
+  border-radius: 8px;
+  padding: 12px 14px;
+  margin: 16px 0;
+}
+.preview-row { display: flex; justify-content: space-between; font-size: 13.5px; padding: 3px 0; color: var(--paper-60); }
+.preview-row .mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; color: var(--paper); }
+.preview-row .highlight { color: var(--brass); font-weight: 600; font-size: 15px; }
+
+.btn-primary {
+  background: var(--brass);
+  color: var(--ink);
+  border: none;
+  border-radius: 8px;
+  padding: 13px;
+  font-weight: 600;
+  font-size: 15px;
+  font-family: var(--font-body);
+}
+.btn-secondary {
+  background: transparent;
+  color: var(--paper);
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  padding: 12px;
+  font-weight: 500;
+  font-size: 14px;
+}
+.full-width { width: 100%; }
+
+/* ============ DEAL DETAIL ============ */
+.detail-row { display: flex; justify-content: space-between; padding: 9px 0; border-bottom: 1px solid var(--hairline); font-size: 14px; }
+.detail-row:last-child { border-bottom: none; }
+.detail-row .mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.detail-section-title { font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--paper-60); margin: 18px 0 6px; }
+.stage-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.stage-actions button {
+  background: var(--surface);
+  border: 1px solid var(--hairline);
+  color: var(--paper);
+  border-radius: 6px;
+  padding: 8px 12px;
+  font-size: 12.5px;
+  font-family: var(--font-body);
+}
+.stage-actions button.current { border-color: var(--brass); color: var(--brass); }

@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>DealTracker — Commission Tracker</title>
+<meta name="description" content="Commission and co-broke tracker for Singapore property agents" />
+<meta name="theme-color" content="#0F1D18" />
+
+<link rel="manifest" href="manifest.json" />
+<link rel="apple-touch-icon" href="icons/icon-192.png" />
+<link rel="icon" href="icons/icon-192.png" />
+
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet" />
+
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+
+<div id="app">
+
+  <!-- ============ TOP SUMMARY BAR ============ -->
+  <header class="topbar">
+    <div class="topbar-row">
+      <div class="brand">DealTracker</div>
+      <button id="addDealBtn" class="fab-inline" aria-label="Add deal">+ Deal</button>
+    </div>
+    <div class="summary">
+      <div class="summary-cell">
+        <span class="summary-label">In pipeline</span>
+        <span class="summary-value" id="sumPipeline">$0</span>
+      </div>
+      <div class="summary-cell overdue">
+        <span class="summary-label">Overdue</span>
+        <span class="summary-value" id="sumOverdue">$0</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- ============ SCREENS ============ -->
+  <main id="screens">
+
+    <!-- PIPELINE SCREEN -->
+    <section id="screen-pipeline" class="screen active">
+      <div id="pipelineEmpty" class="empty-state hidden">
+        <p class="empty-title">No deals yet</p>
+        <p class="empty-body">Tap "+ Deal" above and log your first transaction. It takes four fields.</p>
+      </div>
+      <div id="pipelineList" class="deal-list"></div>
+    </section>
+
+    <!-- CALENDAR SCREEN -->
+    <section id="screen-calendar" class="screen">
+      <h2 class="screen-title">Payout calendar</h2>
+      <div id="calendarList" class="calendar-list"></div>
+    </section>
+
+    <!-- REPORTS SCREEN -->
+    <section id="screen-reports" class="screen">
+      <h2 class="screen-title">Monthly report</h2>
+      <div id="reportsList" class="reports-list"></div>
+      <button id="exportCsvBtn" class="btn-secondary full-width">Export CSV</button>
+    </section>
+
+  </main>
+
+  <!-- ============ BOTTOM TAB NAV ============ -->
+  <nav class="tabbar">
+    <button class="tab active" data-screen="pipeline">
+      <span class="tab-icon">▤</span><span>Pipeline</span>
+    </button>
+    <button class="tab" data-screen="calendar">
+      <span class="tab-icon">◷</span><span>Calendar</span>
+    </button>
+    <button class="tab" data-screen="reports">
+      <span class="tab-icon">▦</span><span>Reports</span>
+    </button>
+  </nav>
+
+</div>
+
+<!-- ============ ADD / EDIT DEAL MODAL ============ -->
+<div id="dealModal" class="modal-backdrop hidden">
+  <div class="modal">
+    <div class="modal-header">
+      <span id="modalTitle">New deal</span>
+      <button class="modal-close" data-close-modal>&times;</button>
+    </div>
+
+    <form id="dealForm" class="modal-body">
+      <label class="field">
+        <span>Property address</span>
+        <input type="text" id="f_address" required placeholder="e.g. 12 Tanjong Rhu Rd, #08-03" />
+      </label>
+
+      <div class="field-row">
+        <label class="field">
+          <span>Deal value (S$)</span>
+          <input type="number" id="f_dealValue" required min="0" step="1000" placeholder="1500000" />
+        </label>
+        <label class="field">
+          <span>Commission %</span>
+          <input type="number" id="f_commissionPct" required min="0" max="10" step="0.1" value="1" />
+        </label>
+      </div>
+
+      <div class="field-row">
+        <label class="field">
+          <span>Your agency split %</span>
+          <input type="number" id="f_agentSplitPct" required min="0" max="100" step="1" value="80" />
+        </label>
+        <label class="field">
+          <span>Stage</span>
+          <select id="f_stage">
+            <option value="prospecting">Prospecting</option>
+            <option value="offer_accepted">Offer accepted</option>
+            <option value="option_exercised">Option exercised</option>
+            <option value="completed">Completed</option>
+            <option value="paid">Paid</option>
+          </select>
+        </label>
+      </div>
+
+      <div class="cobroke-toggle">
+        <label class="checkbox-field">
+          <input type="checkbox" id="f_hasCobroke" />
+          <span>This is a co-broke deal</span>
+        </label>
+      </div>
+
+      <div id="cobrokeFields" class="cobroke-fields hidden">
+        <div class="field-row">
+          <label class="field">
+            <span>Partner name</span>
+            <input type="text" id="f_partnerName" placeholder="e.g. Tan Wei Ming" />
+          </label>
+          <label class="field">
+            <span>Partner's split %</span>
+            <input type="number" id="f_partnerSplitPct" min="0" max="100" step="1" value="50" />
+          </label>
+        </div>
+      </div>
+
+      <div id="livePreview" class="live-preview">
+        <div class="preview-row"><span>Total commission</span><span id="pv_total" class="mono">—</span></div>
+        <div class="preview-row"><span>Your net share</span><span id="pv_net" class="mono highlight">—</span></div>
+      </div>
+
+      <button type="submit" class="btn-primary full-width">Save deal</button>
+    </form>
+  </div>
+</div>
+
+<!-- ============ DEAL DETAIL MODAL ============ -->
+<div id="detailModal" class="modal-backdrop hidden">
+  <div class="modal">
+    <div class="modal-header">
+      <span>Deal detail</span>
+      <button class="modal-close" data-close-modal>&times;</button>
+    </div>
+    <div class="modal-body" id="detailBody"></div>
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
