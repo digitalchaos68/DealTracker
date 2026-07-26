@@ -87,6 +87,15 @@ html, body {
   font-family: var(--font-body);
 }
 
+.sync-status {
+  font-size: 11px;
+  color: var(--paper-35);
+  margin-bottom: 10px;
+  min-height: 14px;
+}
+.sync-status.error { color: var(--stamp-red); }
+.sync-status.offline { color: var(--amber); }
+
 .summary {
   display: flex;
   gap: 10px;

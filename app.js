@@ -1,11 +1,19 @@
 "use strict";
 
 /* ============================================================
+   SUPABASE CONFIG — fill these in from your project's
+   Settings → API page, then this file works as-is.
+   ============================================================ */
+const SUPABASE_URL = "https://oobzdmzpcxkcbpowuoky.supabase.co"; // e.g. https://abcdefgh.supabase.co
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9vYnpkbXpwY3hrY2Jwb3d1b2t5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQ5NjgzMzUsImV4cCI6MjEwMDU0NDMzNX0.PI8gDFBZ-vGZnOxyn1xjfysPtw2TLMt8NMQIsalsmSw";
+
+const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+/* ============================================================
    PART 1 — CORE BUSINESS LOGIC
-   Ported directly from commission-tracker-core.ts.
-   These functions are storage-agnostic: they take plain deal
-   objects and return numbers/new objects. Swap localStorage for
-   Supabase later without touching anything in this section.
+   Unchanged from before. These functions take plain deal objects
+   and return numbers/new objects — they don't know or care that
+   the data now comes from Supabase instead of localStorage.
    ============================================================ */
 
 const STAGE_ORDER = [
@@ -28,8 +36,6 @@ function round2(value) {
   return Math.round(value * 100) / 100;
 }
 
-// Same two-step order as the backend: split the co-broke pool first,
-// then apply your agency split only to your own share of that pool.
 function calculateCommission(deal) {
   const totalCommission = deal.dealValue * (deal.commissionPercent / 100);
 
@@ -52,7 +58,6 @@ function calculateCommission(deal) {
   };
 }
 
-// Forward-only stage transitions, same guard as the backend version.
 function moveToStage(deal, newStage, date) {
   date = date || new Date().toISOString();
   const currentIndex = STAGE_ORDER.indexOf(deal.stage);
@@ -116,37 +121,169 @@ function fmtMoney(n) {
 }
 
 /* ============================================================
-   PART 2 — STORAGE LAYER (localStorage today, Supabase-ready)
-   Every read/write goes through these three functions. To move
-   to Supabase later, you only need to rewrite the bodies of
-   loadDeals/saveDeals — nothing in Part 1 or Part 3 changes.
+   PART 2 — STORAGE LAYER (Supabase, with a localStorage cache
+   for offline viewing)
+
+   Design notes for future-you:
+   - Every deal is scoped to auth.uid() via Row Level Security
+     (see supabase-schema.sql) — the queries below don't need to
+     filter by user_id manually, Postgres enforces it server-side.
+   - We use Supabase's ANONYMOUS auth for now, so an agent gets a
+     stable identity with zero login screen. When you add Google
+     login later (Step 2), you call supabase.auth.linkIdentity()
+     to UPGRADE the same anonymous account instead of creating a
+     new one — their existing deals carry over automatically.
+   - Writes require network. Reads fall back to the last successful
+     fetch (cached in localStorage) if offline, so the app is at
+     least viewable without a signal, matching the "works on a
+     train" requirement from the original PWA.
    ============================================================ */
 
-const STORAGE_KEY = "dealtracker_deals_v1";
+const CACHE_KEY = "dealtracker_cache_v1";
 
-function loadDeals() {
+function setSyncStatus(text, mode) {
+  const el = document.getElementById("syncStatus");
+  if (!el) return;
+  el.textContent = text;
+  el.className = "sync-status" + (mode ? " " + mode : "");
+}
+
+// Ensures every visitor has a stable Supabase identity without a login
+// screen. Anonymous auth persists its session in localStorage automatically
+// (via supabase-js), so the same "account" is reused on return visits to
+// the same browser.
+async function ensureSession() {
+  const { data: { session } } = await supabaseClient.auth.getSession();
+  if (session) return session.user;
+
+  const { data, error } = await supabaseClient.auth.signInAnonymously();
+  if (error) {
+    console.error("Anonymous sign-in failed", error);
+    throw error;
+  }
+
+  // First time we see this user: create their row in `users` so the
+  // deals.user_id foreign key has somewhere to point.
+  await supabaseClient.from("users").upsert({ id: data.user.id, name: "New Agent" });
+
+  return data.user;
+}
+
+// Converts a Supabase `deals` row (+ nested co_broke_partners and
+// deal_stage_history from the join) into the plain-object shape the
+// core logic functions (Part 1) expect.
+function rowToDeal(row) {
+  const partner = (row.co_broke_partners || [])[0];
+  return {
+    id: row.id,
+    propertyAddress: row.property_address,
+    dealValue: row.deal_value_cents / 100,
+    commissionPercent: Number(row.commission_percent),
+    agentSplitPercent: Number(row.agent_split_percent),
+    stage: row.stage,
+    expectedPayoutDate: row.expected_payout_date,
+    createdAt: row.created_at,
+    coBrokePartner: partner
+      ? { name: partner.name, splitPercent: Number(partner.split_percent) }
+      : undefined,
+    stageHistory: (row.deal_stage_history || [])
+      .map((h) => ({ stage: h.stage, date: h.changed_at }))
+      .sort((a, b) => a.date.localeCompare(b.date)),
+  };
+}
+
+async function loadDeals() {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    return raw ? JSON.parse(raw) : [];
+    const { data, error } = await supabaseClient
+      .from("deals")
+      .select("*, co_broke_partners(*), deal_stage_history(*)")
+      .order("created_at", { ascending: false });
+
+    if (error) throw error;
+
+    const mapped = data.map(rowToDeal);
+    localStorage.setItem(CACHE_KEY, JSON.stringify(mapped));
+    setSyncStatus("Synced", "");
+    return mapped;
   } catch (e) {
-    console.error("Failed to load deals", e);
-    return [];
+    console.error("Load from Supabase failed, falling back to cache", e);
+    setSyncStatus("Offline — showing last saved data", "offline");
+    const cached = localStorage.getItem(CACHE_KEY);
+    return cached ? JSON.parse(cached) : [];
   }
 }
 
-function saveDeals(deals) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(deals));
+// Inserts a brand-new deal: the deals row, its co-broke partner row (if
+// any), and one deal_stage_history row per stage it was fast-forwarded
+// through. Three tables, one logical action — if any insert fails we
+// don't silently leave partial data, we surface the error to the caller.
+async function createDealInSupabase(deal, userId) {
+  const { data: dealRow, error: dealErr } = await supabaseClient
+    .from("deals")
+    .insert({
+      user_id: userId,
+      property_address: deal.propertyAddress,
+      deal_value_cents: Math.round(deal.dealValue * 100),
+      commission_percent: deal.commissionPercent,
+      agent_split_percent: deal.agentSplitPercent,
+      agency_split_percent: 100 - deal.agentSplitPercent,
+      stage: deal.stage,
+      expected_payout_date: deal.expectedPayoutDate ? deal.expectedPayoutDate.slice(0, 10) : null,
+    })
+    .select()
+    .single();
+
+  if (dealErr) throw dealErr;
+
+  if (deal.coBrokePartner) {
+    const { error: partnerErr } = await supabaseClient.from("co_broke_partners").insert({
+      deal_id: dealRow.id,
+      name: deal.coBrokePartner.name,
+      split_percent: deal.coBrokePartner.splitPercent,
+    });
+    if (partnerErr) throw partnerErr;
+  }
+
+  const historyRows = deal.stageHistory.map((h) => ({
+    deal_id: dealRow.id,
+    stage: h.stage,
+    changed_at: h.date,
+  }));
+  const { error: historyErr } = await supabaseClient.from("deal_stage_history").insert(historyRows);
+  if (historyErr) throw historyErr;
+
+  return dealRow.id;
 }
 
-function uid() {
-  return "d_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+// Persists a stage move: updates the deals row (stage + payout date) and
+// appends exactly one new deal_stage_history row. We only insert the LAST
+// entry of stageHistory here — moveToStage() already appended it locally,
+// so re-inserting the whole array would duplicate every prior stage.
+async function updateStageInSupabase(deal) {
+  const { error: updateErr } = await supabaseClient
+    .from("deals")
+    .update({
+      stage: deal.stage,
+      expected_payout_date: deal.expectedPayoutDate ? deal.expectedPayoutDate.slice(0, 10) : null,
+    })
+    .eq("id", deal.id);
+  if (updateErr) throw updateErr;
+
+  const latest = deal.stageHistory[deal.stageHistory.length - 1];
+  const { error: historyErr } = await supabaseClient.from("deal_stage_history").insert({
+    deal_id: deal.id,
+    stage: latest.stage,
+    changed_at: latest.date,
+  });
+  if (historyErr) throw historyErr;
 }
 
 /* ============================================================
    PART 3 — UI WIRING
    ============================================================ */
 
-let deals = loadDeals();
+let deals = [];
+let currentUserId = null;
 
 // ---- Tab navigation ----
 document.querySelectorAll(".tab").forEach((tab) => {
@@ -212,7 +349,7 @@ function updateLivePreview() {
   document.getElementById("pv_net").textContent = fmtMoney(yourNetShare);
 }
 
-dealForm.addEventListener("submit", (e) => {
+dealForm.addEventListener("submit", async (e) => {
   e.preventDefault();
   const address = document.getElementById("f_address").value.trim();
   if (!address) return;
@@ -221,22 +358,33 @@ dealForm.addEventListener("submit", (e) => {
   const now = new Date().toISOString();
 
   const newDeal = Object.assign(buildDealFromForm(), {
-    id: uid(),
+    id: null, // assigned by Supabase after insert
     propertyAddress: address,
     stage: "prospecting",
     stageHistory: [{ stage: "prospecting", date: now }],
     createdAt: now,
   });
 
-  // Fast-forward through stages so history and payout-date logic stay
-  // consistent, in case the agent is logging a deal that's already
-  // further along the pipeline.
   const finalDeal = STAGE_ORDER.indexOf(stage) > 0 ? moveToStage(newDeal, stage, now) : newDeal;
 
-  deals.push(finalDeal);
-  saveDeals(deals);
-  dealModal.classList.add("hidden");
-  renderPipeline();
+  const submitBtn = dealForm.querySelector("button[type=submit]");
+  submitBtn.disabled = true;
+  submitBtn.textContent = "Saving…";
+
+  try {
+    const newId = await createDealInSupabase(finalDeal, currentUserId);
+    finalDeal.id = newId;
+    deals.unshift(finalDeal);
+    localStorage.setItem(CACHE_KEY, JSON.stringify(deals));
+    dealModal.classList.add("hidden");
+    renderPipeline();
+  } catch (err) {
+    console.error(err);
+    alert("Couldn't save this deal — check your connection and try again.");
+  } finally {
+    submitBtn.disabled = false;
+    submitBtn.textContent = "Save deal";
+  }
 });
 
 // ---- Pipeline rendering ----
@@ -249,7 +397,6 @@ function renderPipeline() {
     empty.classList.remove("hidden");
   } else {
     empty.classList.add("hidden");
-    // Most recently touched deals first.
     const sorted = [...deals].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
     sorted.forEach((deal) => list.appendChild(renderDealCard(deal)));
   }
@@ -308,15 +455,19 @@ function openDetailModal(dealId) {
   `;
 
   body.querySelectorAll("[data-stage]").forEach((btn) => {
-    btn.addEventListener("click", () => {
+    btn.addEventListener("click", async () => {
       try {
         const updated = moveToStage(deal, btn.dataset.stage);
+        btn.disabled = true;
+        await updateStageInSupabase(updated);
         deals = deals.map((d) => (d.id === deal.id ? updated : d));
-        saveDeals(deals);
+        localStorage.setItem(CACHE_KEY, JSON.stringify(deals));
         detailModal.classList.add("hidden");
         renderPipeline();
       } catch (err) {
-        alert(err.message);
+        console.error(err);
+        alert(err.message || "Couldn't update this deal — check your connection.");
+        btn.disabled = false;
       }
     });
   });
@@ -388,7 +539,24 @@ document.getElementById("exportCsvBtn").addEventListener("click", () => {
 });
 
 // ---- Init ----
-renderPipeline();
+async function init() {
+  setSyncStatus("Connecting…", "");
+  try {
+    const user = await ensureSession();
+    currentUserId = user.id;
+  } catch (e) {
+    setSyncStatus("Couldn't connect — check Supabase config", "error");
+    const cached = localStorage.getItem(CACHE_KEY);
+    deals = cached ? JSON.parse(cached) : [];
+    renderPipeline();
+    return;
+  }
+
+  deals = await loadDeals();
+  renderPipeline();
+}
+
+init();
 
 // ---- Register service worker ----
 if ("serviceWorker" in navigator) {
